@@ -1,0 +1,20 @@
+# Rendered videos never go in the repo
+output/
+*.mp4
+*.mkv
+*.mov
+*.wav
+
+# Your personal presets (a fresh copy is created on first run)
+presets.json
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.venv/
+
+# Gradio
+.gradio/
+flagged/
