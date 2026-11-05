@@ -157,9 +157,15 @@ def make_night_sky(w, h, rng, color=None):
     return _vignette(img, 0.3)
 
 
+def make_black(w, h, rng, color=None):
+    """Pure black. Best for projectors: black means no light, so only the prey shows up on the floor."""
+    return Image.new("RGB", (w, h), (0, 0, 0))
+
+
 # name -> function(w, h, rng, color) -> PIL RGB image
 BACKGROUNDS = {
     "Dark solid": make_dark_solid,
+    "Black (projector)": make_black,
     "Grass": make_grass,
     "Wooden floor": make_wood_floor,
     "Water": make_water,

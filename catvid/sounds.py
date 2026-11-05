@@ -108,11 +108,27 @@ def make_squeak(rng: np.random.Generator, sr: int = SAMPLE_RATE) -> np.ndarray:
     return _fade(_norm(np.concatenate(parts), 0.55), sr, 3)
 
 
+def make_clicks(rng: np.random.Generator, sr: int = SAMPLE_RATE) -> np.ndarray:
+    """Grasshopper wing snaps: a fast, dry crackle of sharp clicks, like a grasshopper taking off."""
+    count = int(rng.integers(4, 12))
+    gap = rng.uniform(0.018, 0.04)
+    n = int((count * gap + 0.05) * sr)
+    out = np.zeros(n, dtype=np.float32)
+    for i in range(count):
+        ln = int(rng.uniform(0.003, 0.007) * sr)
+        burst = _bandpass(rng.standard_normal(ln * 4).astype(np.float32), sr, 3500, 12000)[:ln]
+        burst *= np.exp(-np.linspace(0, 6, ln)).astype(np.float32) * rng.uniform(0.4, 1.0)
+        s = int((i * gap + rng.uniform(0, gap * 0.4)) * sr)
+        out[s:s + ln] += burst[: n - s]
+    return _fade(_norm(out, 0.75), sr, 2)
+
+
 SOUNDS = {
     "Rustling": make_rustle,
     "Scratching": make_scratch,
     "Bird chirps": make_chirp,
     "Mouse squeaks": make_squeak,
+    "Grasshopper clicks": make_clicks,
 }
 SOUND_NAMES = list(SOUNDS)
 

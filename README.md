@@ -120,18 +120,26 @@ Command Prompt window.
 ### Settings
 
 * **Video:** length from 1 minute to 3 hours, 1080p (default) or 720p, always 30 fps.
-* **Prey:** bugs, mice, birds, fish, feathers, laser dot, or mixed; how many on screen, size and speed.
+* **Prey:** bugs, mice, birds, fish, feathers, grasshopper, laser dot, or mixed; how many on screen, size and speed.
+  The grasshopper is drawn from the side (in profile) and leaps around in fast arcs.
 * **Behaviour:** how often prey stops and sits still, how long it stays still, how much it twitches
   while resting, and how often it darts off.
 * **Hiding:** turn hiding on or off, pick grass, leaves, rocks or mixed, the number of hiding spots
   and how often prey goes to hide.
-* **Background:** dark solid, grass, wooden floor, water, night sky, or your own colour with the
+* **Background:** dark solid, black (projector), grass, wooden floor, water, night sky, or your own colour with the
   colour picker.
-* **Sound:** on or off, volume, and which sounds: rustling, scratching, bird chirps, mouse squeaks.
+* **Sound:** on or off, volume, and which sounds: rustling, scratching, bird chirps, mouse squeaks,
+  grasshopper clicks.
 * **Seed:** with **Use fixed seed** ticked, the same settings always give exactly the same video.
   Untick it for a new surprise each time. The seed used is always shown in the status box and in
   the file name, so you can recreate a video you liked. A preview is exactly the first 15 seconds of
   the full video with the same seed and settings.
+
+### Projecting onto the floor
+
+Load the **Grasshopper (projector)** preset. It uses the **Black (projector)** background: black means
+the projector sends no light there, so only the prey appears on the floor and the rest stays dark.
+A dark room makes it pop the most.
 
 ### Where are my videos?
 

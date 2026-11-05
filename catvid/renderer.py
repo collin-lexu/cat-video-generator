@@ -25,7 +25,7 @@ from PIL import Image, ImageDraw
 
 from . import covers as cover_mod
 from .backgrounds import CUSTOM_COLOR, make_background
-from .behavior import Behavior, Cover, PreyAgent, SimEvent
+from .behavior import Behavior, Cover, JumpAgent, PreyAgent, SimEvent
 from .prey import MIXED as MIXED_PREY, PREY_KINDS, Pen
 from .settings import FPS, Settings, build_filename, hex_to_rgb, new_seed
 from .sounds import SAMPLE_RATE, pick_sound, stream_audio
@@ -104,7 +104,8 @@ class Scene:
         else:
             self.composite = self.bg
 
-        self.agents = [PreyAgent(i, k, beh, self.aspect, self.covers, prey_rng) for i, k in enumerate(kinds)]
+        self.agents = [(JumpAgent if k.style == "jump" else PreyAgent)(i, k, beh, self.aspect, self.covers, prey_rng)
+                       for i, k in enumerate(kinds)]
         self.comp_np = np.array(self.composite, dtype=np.uint8)
         self.frame = self.comp_np.copy()
         self._dirty: list[tuple[int, int, int, int]] = []
@@ -134,11 +135,20 @@ class Scene:
         return sounds
 
     # -------------------------------------------------------------- frames
+    def _anchor(self, a: PreyAgent) -> tuple[float, float]:
+        """Pixel position of the drawing origin (side view prey are lifted by their jump height)."""
+        if a.kind.view == "side":
+            return a.x * self.h, (a.y - a.z - a.kind.ground * a.length) * self.h
+        return a.x * self.h, a.y * self.h
+
     def _box(self, a: PreyAgent):
         r = a.length * a.kind.extent * self.h + 4
-        x, y = a.x * self.h, a.y * self.h
-        return (max(0, int(x - r)), max(0, int(y - r)), min(self.w, int(math.ceil(x + r))),
-                min(self.h, int(math.ceil(y + r))))
+        x, y = self._anchor(a)
+        y_lo, y_hi = y - r, y + r
+        if a.kind.view == "side":
+            y_hi = max(y_hi, a.y * self.h + a.length * 0.2 * self.h + 4)   # include the ground shadow
+        return (max(0, int(x - r)), max(0, int(y_lo)), min(self.w, int(math.ceil(x + r))),
+                min(self.h, int(math.ceil(y_hi))))
 
     @staticmethod
     def _merge(boxes):
@@ -179,9 +189,18 @@ class Scene:
             bw, bh = x1 - x0, y1 - y0
             layer = Image.new("RGBA", (bw * ss, bh * ss), (0, 0, 0, 0))
             d = ImageDraw.Draw(layer)
-            for a in agents:
-                pen = Pen(d, (a.x * self.h - x0) * ss, (a.y * self.h - y0) * ss, a.heading,
-                          a.length * self.h * ss)
+            for a in sorted(agents, key=lambda ag: ag.y):   # nearer (lower) prey drawn on top
+                ax, ay = self._anchor(a)
+                k = a.length * self.h * ss
+                if a.kind.view == "side":
+                    # soft shadow on the ground, shrinking and fading as it jumps higher
+                    gx, gy = (ax - x0) * ss, (a.y * self.h - y0) * ss
+                    lift = min(1.0, a.z / max(a.length * 3, 1e-6))
+                    rx, ry = k * 0.5 * (1 - 0.4 * lift), k * 0.07 * (1 - 0.4 * lift)
+                    d.ellipse([gx - rx, gy - ry, gx + rx, gy + ry], fill=(0, 0, 0, int(80 * (1 - 0.6 * lift))))
+                    pen = Pen(d, (ax - x0) * ss, (ay - y0) * ss, a.pitch, k, flip=a.facing < 0)
+                else:
+                    pen = Pen(d, (ax - x0) * ss, (ay - y0) * ss, a.heading, k)
                 a.kind.draw(pen, a.anim)
             small = layer.convert("RGBa").reduce(ss).convert("RGBA")
             patch = self.bg.crop(box).convert("RGBA")

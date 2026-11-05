@@ -343,3 +343,167 @@ class PreyAgent:
             self._enter_dart(events)
         else:
             self._enter_move()
+
+
+SIT, CROUCH, AIR, LAND = "sit", "crouch", "air", "land"
+
+
+class JumpAgent(PreyAgent):
+    """A side view jumper (grasshopper): sits, crouches, then leaps in a fast arc.
+
+    ``x, y`` is the spot on the ground, ``z`` the height above it (both in
+    frame heights). ``facing`` is +1 (right) or -1 (left) and ``pitch`` tilts
+    the body nose up on take off and nose down on landing.
+
+    The behaviour sliders still apply: speed makes jumps faster and waits
+    shorter, "sits still" adds longer freezes, "darts off" chains jumps into
+    quick bursts and twitch flicks the antennae and legs while sitting.
+    Jumpers ignore hiding spots (they just land in the grass).
+    """
+
+    def __init__(self, idx, kind, beh, aspect, covers, rng):
+        self.z = 0.0
+        self.pitch = 0.0
+        self.facing = 1.0
+        self.burst = 0
+        self.jump_from = (0.0, 0.0)
+        self.jump_to = (0.0, 0.0)
+        self.jump_h = 0.0
+        self.jump_t = 0.0
+        self.jump_len = 0.3
+        super().__init__(idx, kind, beh, aspect, [], rng)
+        self.margin = max(0.05, self.length * 1.1)
+        self.x = min(max(self.x, self.margin), aspect - self.margin)
+        self.y = min(max(self.y, self.margin + self.length * 0.6), 1 - self.margin)
+        self.facing = 1.0 if rng.random() < 0.5 else -1.0
+        self.heading = 0.0
+        self._sit(first=True)
+
+    # replace the walking cycle from PreyAgent
+    def _enter_move(self):
+        self.state = SIT
+        self.timer = 0.1
+
+    def _enter_pause(self):
+        self.state = SIT
+        self.timer = 0.1
+
+    def _sit(self, first=False):
+        b = self.beh
+        self.state = SIT
+        quick = 1.0 / max(0.3, b.speed)
+        if self.burst > 0:
+            self.burst -= 1
+            self.timer = self.rng.uniform(0.06, 0.2) * quick
+        elif self.rng.random() < b.pause_frequency * 0.35:
+            self.timer = b.pause_duration * self.rng.uniform(0.3, 0.8)    # a proper freeze
+        else:
+            self.timer = self.rng.uniform(0.2, 0.75) * quick
+        if first:
+            self.timer = self.rng.uniform(0.2, 1.0)
+
+    def _pick_jump(self):
+        b = self.beh
+        top = self.margin + self.length * 0.6      # leave room above for the body
+        for _ in range(12):
+            d = self.rng.uniform(0.18, 0.6) * (0.8 + 0.2 * b.speed) * math.sqrt(b.size)
+            # mostly sideways: that is what a side profile shows best
+            ang = self.rng.normal(0.0, 0.45)
+            dx = math.cos(ang) * d
+            dy = math.sin(ang) * d * 0.7
+            # head away from the nearest edge, otherwise go either way
+            left, right = self.x - self.margin, self.aspect - self.margin - self.x
+            if left < 0.25:
+                sign = 1.0
+            elif right < 0.25:
+                sign = -1.0
+            elif self.rng.random() < 0.7:
+                sign = self.facing     # keeps going the way it faces, sometimes turns around
+            else:
+                sign = -self.facing
+            tx, ty = self.x + sign * dx, self.y + dy
+            if self.margin <= tx <= self.aspect - self.margin and top <= ty <= 1 - self.margin:
+                return tx, ty
+        return (self.rng.uniform(self.margin, self.aspect - self.margin),
+                self.rng.uniform(top, 1 - self.margin))
+
+    def update(self, dt: float, events: list):
+        self.t += dt
+        b = self.beh
+        self.timer -= dt
+        a = self.anim
+        twitch_rate = 0.4 + 3.0 * b.twitch if b.twitch > 0 else 0.0
+
+        if self.state == SIT:
+            a.leg += (0.0 - a.leg) * min(1.0, 18 * dt)
+            a.crouch += (0.0 - a.crouch) * min(1.0, 12 * dt)
+            a.air = max(0.0, a.air - 8 * dt)
+            self.pitch *= max(0.0, 1 - 14 * dt)
+            if self.twitch_left <= 0 and self.rng.random() < twitch_rate * dt:
+                self.twitch_len = self.rng.uniform(0.12, 0.35)
+                self.twitch_left = self.twitch_len
+                self.twitch_strength = self.rng.uniform(0.4, 1.0)
+                events.append(SimEvent("twitch", self.x / self.aspect, self.twitch_strength * 0.6))
+            if self.timer <= 0:
+                self.jump_to = self._pick_jump()
+                new_facing = 1.0 if self.jump_to[0] >= self.x else -1.0
+                if new_facing != self.facing:
+                    self.facing = new_facing
+                self.state = CROUCH
+                self.timer = self.rng.uniform(0.06, 0.12) / max(0.5, b.speed ** 0.5)
+                self.crouch_len = self.timer
+
+        elif self.state == CROUCH:
+            k = 1 - max(0.0, self.timer) / self.crouch_len
+            a.crouch = k
+            a.leg = 0.0
+            self.pitch = -0.12 * k              # nose up, ready to spring
+            if self.timer <= 0:
+                self.state = AIR
+                self.jump_from = (self.x, self.y)
+                d = math.hypot(self.jump_to[0] - self.x, self.jump_to[1] - self.y)
+                self.jump_len = (0.18 + 0.38 * math.sqrt(d)) / max(0.4, b.speed ** 0.6)
+                self.jump_h = d * self.rng.uniform(0.28, 0.5) + 0.03
+                self.jump_t = 0.0
+                if self.burst == 0 and self.rng.random() < b.dart_frequency * 0.5:
+                    self.burst = int(self.rng.integers(1, 4))     # a burst of quick jumps
+                events.append(SimEvent("dart", self.x / self.aspect, 0.9))
+
+        elif self.state == AIR:
+            self.jump_t += dt
+            u = min(1.0, self.jump_t / self.jump_len)
+            fx, fy = self.jump_from
+            tx, ty = self.jump_to
+            self.x = fx + (tx - fx) * u
+            self.y = fy + (ty - fy) * u
+            self.z = 4 * self.jump_h * u * (1 - u)
+            # legs snap straight at take off, then slowly fold back in flight
+            a.leg = 1.0 if u < 0.15 else max(0.72, 1.0 - (u - 0.15) * 0.5)
+            a.crouch = max(0.0, 1.0 - u * 8)
+            a.air = min(1.0, u * 6, (1 - u) * 5 + 0.2)
+            # nose follows the arc: up going up, down coming down
+            self.pitch = -0.55 * (1 - 2 * u) * min(1.0, self.jump_h / max(0.05, abs(tx - fx) + 1e-6))
+            self.speed = math.hypot(tx - fx, ty - fy) / self.jump_len
+            if u >= 1.0:
+                self.z = 0.0
+                self.state = LAND
+                self.timer = 0.08
+                a.crouch = 1.0
+                events.append(SimEvent("step", self.x / self.aspect, 0.8))
+
+        elif self.state == LAND:
+            a.leg *= max(0.0, 1 - 30 * dt)
+            a.air = max(0.0, a.air - 10 * dt)
+            self.pitch *= max(0.0, 1 - 20 * dt)
+            self.speed = 0.0
+            if self.timer <= 0:
+                self._sit()
+
+        if self.twitch_left > 0:
+            self.twitch_left -= dt
+            k = max(0.0, self.twitch_left / self.twitch_len)
+            a.twitch = self.twitch_strength * math.sin(math.pi * k)
+        else:
+            a.twitch = 0.0
+        a.t = self.t
+        a.moving = 1.0 if self.state == AIR else 0.0
